@@ -1,4 +1,4 @@
-<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/91788b2e-1907-4f19-8c89-e201a0f6c950" /># 🖨️ MiniPrinter
+# 🖨️ MiniPrinter
 
 <div align="center">
 
@@ -28,16 +28,27 @@
 
 <table align="center">
   <tr>
-    <td align="center"><img src="<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/d7669cc9-2d36-4ae8-827f-99bad2956da3" />
-" width="200px"/><br><b>布局模式 A</b></td>
-    <td align="center"><img src="<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/76cbf0c0-f434-417a-8753-442cb44ac49b" />
-" width="200px"/><br><b>布局模式 B</b></td>
-    <td align="center"><img src="<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/d090e4f6-8b78-4c8d-9e05-902b530e5bc7" />
-" width="200px"/><br><b>布局模式 C</b></td>
-    <td align="center"><img src="<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/6f3de554-1baa-418a-b0e9-70f499bc832c" />
-" width="200px"/><br><b>布局模式 D</b></td>
-    <td align="center"><img src="<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/0ebbd2f1-59fb-495e-9cd1-1e27c57a4d06" />
-" width="200px"/><br><b>布局模式 D</b></td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/d7669cc9-2d36-4ae8-827f-99bad2956da3" width="200px"/><br>
+      <b>布局模式 A</b>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/76cbf0c0-f434-417a-8753-442cb44ac49b" width="200px"/><br>
+      <b>布局模式 B</b>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/d090e4f6-8b78-4c8d-9e05-902b530e5bc7" width="200px"/><br>
+      <b>布局模式 C</b>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/6f3de554-1baa-418a-b0e9-70f499bc832c" width="200px"/><br>
+      <b>布局模式 D</b>
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/0ebbd2f1-59fb-495e-9cd1-1e27c57a4d06" width="200px"/><br>
+      <b>布局模式 E</b>
+    </td>
+  </tr>
 </table>
 
 ---
@@ -47,8 +58,7 @@
 MiniPrinter 能够呈现出色的打印细节，以下是实际打印样张展示：
 
 <div align="center">
-  <img src="<img width="1731" height="1162" alt="image" src="https://github.com/user-attachments/assets/dea91735-c1b6-40eb-a13d-01bf5e590512" />
-" width="45%" />
+  <img src="https://github.com/user-attachments/assets/dea91735-c1b6-40eb-a13d-01bf5e590512" width="45%" />
 </div>
 
 ---
