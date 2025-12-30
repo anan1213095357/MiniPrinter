@@ -58,8 +58,7 @@
 MiniPrinter 能够呈现出色的打印细节，以下是实际打印样张展示：
 
 <div align="center">
-  <img src="![5a00bb3de1f8f4bfde32932516924a2e](https://github.com/user-attachments/assets/96b61e5a-7bbe-4834-92b1-24bc8bf41678)
-" width="45%" />
+  <img src="https://github.com/user-attachments/assets/96b61e5a-7bbe-4834-92b1-24bc8bf41678" width="45%" />
 </div>
 
 ---
