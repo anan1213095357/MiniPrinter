@@ -1,0 +1,1805 @@
+﻿@page "/"
+@using System.IO
+@using Microsoft.AspNetCore.Hosting
+@using System.Text.Json
+@using MiniPrint.Controllers
+@using MiniPrint.Services
+@using System.Text.Encodings.Web
+@using System.Text.Unicode
+@inject IJSRuntime JS
+@inject IWebHostEnvironment Environment
+@inject HttpClient Http
+@inject TemplateService TemplateService
+@implements IDisposable
+
+<PageTitle>MiniPrint Studio Pro</PageTitle>
+
+<script src="html2canvas.min.js"></script>
+<script src="qrcode.min.js"></script>
+
+<div class="studio-container @CurrentTheme">
+    
+    <div class="control-panel glass-card">
+        <div class="panel-header">
+            <div style="display:flex; justify-content:space-between; align-items:start;">
+                <div>
+                    <h2>🖨️ MiniPrint Studio</h2>
+                    <p>小智 - esp32打印机</p>
+                </div>
+
+                <div class="theme-selector">
+                    <select @onchange="OnThemeChanged" value="@CurrentTheme">
+                        <option value="theme-default">🌌 默认星空</option>
+                        <option value="theme-pink">🌸 粉色可爱</option>
+                        <option value="theme-military">🪖 军火库</option>
+                        <option value="theme-cyberpunk">🤖 赛博朋克</option>
+                    </select>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="canvas-settings prop-group">
+            <label>画布尺寸 (px)</label>
+            <div style="display: flex; gap: 10px;">
+                <div style="flex:1">
+                    <span class="helper-text">宽度</span>
+                    <input type="number" @bind="CanvasWidth" />
+                </div>
+                <div style="flex:1">
+                    <span class="helper-text">高度</span>
+                    <input type="number" @bind="CanvasHeight" />
+                </div>
+            </div>
+        </div>
+        
+        <div class="divider"></div>
+
+        <div class="tools-grid">
+            <button class="btn-tool" @onclick="AddText">
+                <span class="icon">📝</span> 添加文字
+            </button>
+            <button class="btn-tool" @onclick="AddQrCode">
+                <span class="icon">🔳</span> 添加二维码
+            </button>
+            <div class="file-upload-wrapper btn-tool">
+                <span class="icon">🖼️</span> 添加图片
+                <InputFile OnChange="HandleImageUpload" accept="image/png, image/jpeg, image/jpg" class="hidden-input" />
+            </div>
+            
+            <div class="btn-tool" style="position: relative;" @onclick="() => ShowDynamicMenu = !ShowDynamicMenu">
+                <span class="icon">🧩</span> 添加动态元素
+                @if(ShowDynamicMenu)
+                {
+                    <div class="submenu animate-in">
+                        <div class="submenu-item" @onclick="() => AddDynamicElement(ElementType.DynamicString)">
+                             🅰️ 动态字符串
+                        </div>
+                        <div class="submenu-item" @onclick="() => AddDynamicElement(ElementType.DynamicQRCode)">
+                             🔲 动态二维码
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <button class="btn-tool" @onclick="ClearCanvas">
+                <span class="icon">🗑️</span> 清空画布
+            </button>
+        </div>
+        <div class="divider"></div>
+        
+        <div class="properties-panel">
+            <h3>当前选中元素</h3>
+            @if (SelectedElement != null)
+            {
+                <div class="prop-group animate-in">
+                    <label>旋转角度 (°)</label>
+                    <input type="number" @bind="SelectedElement.Rotation" />
+
+                    @if (SelectedElement.Type == ElementType.Text)
+                    {
+                        <label>文字内容</label>
+                        <input type="text" @bind="SelectedElement.Content" @bind:event="oninput" />
+                        
+                        <label>字号 (px)</label>
+                        <input type="number" @bind="SelectedElement.FontSize" />
+                    }
+                    else if (SelectedElement.Type == ElementType.QRCode)
+                    {
+                        <label>二维码内容</label>
+                        <input type="text" @bind="SelectedElement.Content" @bind:event="oninput" @onkeyup="() => RenderQrCode(SelectedElement)" />
+                        
+                        <div class="prop-group-row">
+                            <div style="flex:1">
+                                <label>尺寸</label>
+                                <input type="number" @bind="SelectedElement.Width" />
+                            </div>
+                        </div>
+                    }
+                    else if (SelectedElement.Type == ElementType.Image)
+                    {
+                        <label>图片尺寸 (px)</label>
+                        <div class="prop-group-row">
+                             <input type="number" @bind="SelectedElement.Width" placeholder="宽" /> 
+                             <span>x</span>
+                             <input type="number" @bind="SelectedElement.Height" placeholder="高" />
+                        </div>
+                        <div class="preview-img-box">
+                            <img src="@SelectedElement.Content" />
+                        </div>
+                    }
+                    else if (SelectedElement.Type == ElementType.DynamicString || SelectedElement.Type == ElementType.DynamicQRCode)
+                    {
+                         <label style="color: var(--primary);">🔗 变量键名 (Key)</label>
+                         <span class="helper-text">API调用时将替换此值</span>
+                         <input type="text" @bind="SelectedElement.Content" placeholder="例如: {username}" style="border-color: var(--primary);" />
+
+                         @if(SelectedElement.Type == ElementType.DynamicString)
+                         {
+                             <label>字号 (px)</label>
+                             <input type="number" @bind="SelectedElement.FontSize" />
+                         }
+                         else
+                         {
+                              <div style="flex:1">
+                                <label>尺寸</label>
+                                <input type="number" @bind="SelectedElement.Width" />
+                            </div>
+                         }
+                    }
+
+                    <div class="helper-text" style="margin-top:10px;">💡 提示：拖拽右下角缩放，拖拽顶部绿色手柄旋转</div>
+                    <button class="btn-danger" @onclick="() => RemoveElement(SelectedElement)">删除此元素</button>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">点击画布上的元素进行编辑</div>
+            }
+        </div>
+
+        <div class="action-area">
+            <button class="btn-print @(IsPrinting ? "printing" : "")" @onclick="PrintDesign" disabled="@IsPrinting">
+                @if (IsPrinting)
+                {
+                    <span class="spinner"></span> <span>生成中...</span>
+                }
+                else
+                {
+                    <span>🖨️ 立即打印</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    <div class="canvas-area" @onmousedown="DeselectAll">
+
+        <div style="display:flex; gap: 10px; align-items: center;position:fixed;top:10px;right:10px; z-index: 50;">
+            <button class="btn-api-docs" @onclick="ShowApiDocModal">
+                <span>🔌 API 文档</span>
+            </button>
+            <button class="btn-api-docs btn-about" @onclick="() => ShowAboutModal = true">
+                <span>☕ 关于 & 赞助</span>
+            </button>
+        </div>
+
+        <div class="printer-slot" style="width: @(CanvasWidth + 20)px"></div>
+        
+        <div class="paper-sheet @(IsPrinting ? "anim-print" : "")" 
+             id="print-canvas" 
+             style="width: @(CanvasWidth)px; height: @(CanvasHeight)px;"
+             @onmousedown:stopPropagation="true">
+             
+            @foreach (var item in Elements)
+            {
+                <div id="el-@item.Id" 
+                     class="draggable-item @(SelectedElement == item ? "selected" : "") @(IsDynamic(item) ? "dynamic-item" : "")"
+                     style="left: @(item.X)px; top: @(item.Y)px; transform: rotate(@(item.Rotation)deg); cursor: move; position: absolute;"
+                     @onmousedown="@(e => OnMouseDownElement(e, item))"
+                     @onclick:stopPropagation="true">
+                     
+                    @if (item.Type == ElementType.Text)
+                    {
+                        <span style="font-size: @(item.FontSize)px; font-family: 'Arial'; font-weight: bold; color: black; white-space: nowrap; user-select: none;">
+                            @item.Content
+                        </span>
+                    }
+                    else if (item.Type == ElementType.Image)
+                    {
+                        <img src="@item.Content" draggable="false" style="width: @(item.Width)px; height: @(item.Height)px; pointer-events: none; display: block;" />
+                    }
+                    else if (item.Type == ElementType.QRCode)
+                    {
+                        <div class="qr-preview-box" style="width: @(item.Width)px; height: @(item.Height)px; background: white; padding: 2px;">
+                             <div id="qr-target-@item.Id" style="width: 100%; height: 100%; pointer-events: none;"></div>
+                        </div>
+                    }
+                    else if (item.Type == ElementType.DynamicString)
+                    {
+                        <span style="font-size: @(item.FontSize)px; font-family: 'Courier New'; font-weight: bold; color: blue; white-space: nowrap; user-select: none; border: 1px dashed blue; padding: 2px;">
+                            @(string.IsNullOrEmpty(item.Content) ? "{Dynamic}" : item.Content)
+                        </span>
+                    }
+                    else if (item.Type == ElementType.DynamicQRCode)
+                    {
+                         <div class="qr-preview-box" style="width: @(item.Width)px; height: @(item.Height)px; background: rgba(0,0,255,0.1); border: 2px dashed blue; display: flex; align-items: center; justify-content: center;">
+                             <span style="font-size: 10px; color: blue;">QR: @item.Content</span>
+                        </div>
+                    }
+
+                    @if (SelectedElement == item && !IsPrinting)
+                    {
+                        <div class="resize-handle"
+                             @onmousedown="@(e => OnMouseDownResize(e, item))"
+                             @onmousedown:stopPropagation="true">
+                        </div>
+
+                        <div class="rotate-handle"
+                             @onmousedown="@(e => OnMouseDownRotate(e, item))"
+                             @onmousedown:stopPropagation="true">
+                        </div>
+                    }
+                </div>
+            }
+
+        </div>
+        
+        <div class="template-dock">
+            <div class="dock-header-label">我的模板库</div>
+            <div class="dock-content-row">
+                <div class="dock-action">
+                    <button class="btn-new-tpl" @onclick="InitiateSave">
+                        <span class="plus-icon">➕</span>
+                        <span class="btn-text">保存设计</span>
+                    </button>
+                </div>
+                
+                <div class="dock-separator"></div>
+
+                <div class="template-scroll-list">
+                    @foreach (var tpl in TemplateList)
+                    {
+                        <div class="tpl-card" @onclick="() => ApplyTemplate(tpl)">
+                            <div class="tpl-thumb-container">
+                                @if(!string.IsNullOrEmpty(tpl.ThumbnailBase64))
+                                {
+                                    <img src="@tpl.ThumbnailBase64" />
+                                }
+                                else
+                                {
+                                    <span class="no-img">无预览</span>
+                                }
+                                <button class="btn-del-tpl" @onclick="() => DeleteTemplate(tpl)" @onclick:stopPropagation="true" title="删除模板">
+                                    <span style="margin-top:-2px;">×</span>
+                                </button>
+                            </div>
+                            <div class="tpl-name" title="@tpl.Name">@tpl.Name</div>
+                             <div class="tpl-name" title="@tpl.Name">
+                                <span style="cursor: pointer; color: var(--text-color); margin-left: 5px; opacity: 0.7;" 
+                                      onclick="navigator.clipboard.writeText('@tpl.Id').then(function() { alert('ID 已复制: @tpl.Id'); })">
+                                    [复制ID]
+                                </span>
+                            </div>
+                        </div>
+                    }
+                    @if (TemplateList.Count == 0)
+                    {
+                        <div class="empty-tpl-hint">暂无模板，点击左侧按钮保存</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (ShowSaveDialog)
+        {
+            <div class="modal-overlay">
+                <div class="modal-box">
+                    <h3>保存为模板</h3>
+                    <input type="text" @bind="NewTemplateName" placeholder="输入模板名称..." autofocus />
+                    <div class="modal-actions">
+                        <button class="btn-cancel" @onclick="() => ShowSaveDialog = false">取消</button>
+                        <button class="btn-confirm" @onclick="ConfirmSave">保存</button>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (ShowApiDocs)
+        {
+            <div class="modal-overlay" @onclick="() => ShowApiDocs = false">
+                <div class="modal-box doc-modal" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h3>🚀 开发者 API 调用指南</h3>
+                        <button class="btn-close" @onclick="() => ShowApiDocs = false">×</button>
+                    </div>
+            
+                    <div class="doc-content">
+                        <div class="api-section">
+                            <h4>1. 动态模板打印 (推荐)</h4>
+                            <p>根据模板 ID 和变量数据生成打印任务。</p>
+                    
+                            <div class="badge-row">
+                                <span class="badge post">POST</span>
+                                <span class="url">/api/print/dynamic</span>
+                            </div>
+
+                            <div class="param-table">
+                                <div class="param-row header">
+                                    <span>参数名</span><span>类型</span><span>说明</span>
+                                </div>
+                                <div class="param-row">
+                                    <span>templateId</span><span>String</span><span>当前模板 ID</span>
+                                </div>
+                                <div class="param-row">
+                                    <span>data</span><span>Object</span><span>变量键值对集合</span>
+                                </div>
+                            </div>
+
+                            <label>请求示例 (JSON):</label>
+                            <div class="code-block">
+                                <pre>@GenerateDynamicJsonExample()</pre>
+                                <button class="btn-copy" @onclick='() => CopyToClipboard(GenerateDynamicJsonExample())'>复制</button>
+                            </div>
+
+                            <label>cURL 示例:</label>
+                            <div class="code-block">
+                                <pre>@GenerateCurlExample()</pre>
+                                 <button class="btn-copy" @onclick='() => CopyToClipboard(GenerateCurlExample())'>复制</button>
+                            </div>
+                        </div>
+
+                
+                    </div>
+                </div>
+            </div>
+        }
+        @if (ShowAboutModal)
+        {
+            <div class="modal-overlay" @onclick="() => ShowAboutModal = false">
+                <div class="modal-box about-modal animate-in" @onclick:stopPropagation="true">
+                    <button class="btn-close-abs" @onclick="() => ShowAboutModal = false">×</button>
+
+                    <div class="about-header">
+                        <div class="avatar-circle">
+                            <img src="4a8d2293e36007a6c405833eb38e745f.jpg" alt="Author" />
+                        </div>
+                        <h3>洪阿楠</h3>
+                        <p class="tagline">全栈开发工程师 / IOT 爱好者 / 创造者</p>
+                        <div class="social-tags">
+                            <span class="tag">C# / Blazor</span>
+                            <span class="tag">ESP32</span>
+                            <span class="tag">数字孪生</span>
+                            <span class="tag">工业建模</span>
+                        </div>
+                    </div>
+
+                    <div class="divider-light"></div>
+
+                    <div class="qr-grid">
+                        <div class="qr-card sponsor-card">
+                            <div class="card-icon">❤️ ☕️</div>
+                            <h4>请我喝杯咖啡</h4>
+                            <p>如果这个工具帮助了你，欢迎打赏支持开发维护。</p>
+                            <div class="qr-img-box">
+                                <img src="b7df7bd58dc6f9c801edd0043cd1c2a0.jpg" />
+                            </div>
+                            <span class="tip-text">微信支付</span>
+                        </div>
+
+                        <div class="qr-card contact-card">
+                            <div class="card-icon">💬</div>
+                            <h4>加我微信交流</h4>
+                            <p>承接外包开发，技术交流，或者只是交个朋友。</p>
+                            <div class="qr-img-box">
+                                <img src="3a0e4df7aac6dd4a8b2e9a88d503b778.jpg" />
+                            </div>
+                            <span class="tip-text">备注：MiniPrint</span>
+                        </div>
+                    </div>
+
+                    <div class="about-footer">
+                        <p>Designed & Built with ❤️ by <strong>洪阿楠</strong></p>
+                        <p class="copyright">© 2025 MiniPrint Studio Pro. All rights reserved.</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+
+    .studio-container.theme-default {
+        --primary: #6366f1;
+        --primary-hover: #4f46e5;
+        --bg-color: #0f172a;
+        /* 纯净的对角线深色渐变 */
+        --bg-image: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        
+        --glass-bg: rgba(30, 41, 59, 0.7);
+        --glass-border: rgba(255, 255, 255, 0.1);
+        --text-color: #f8fafc;
+        --text-muted: #94a3b8;
+        --paper-white: #ffffff;
+        --border-radius: 20px;
+        --btn-radius: 12px;
+        --shadow-color: rgba(0, 0, 0, 0.3);
+        --font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .studio-container.theme-pink {
+        --primary: #ec4899;
+        --primary-hover: #db2777;
+        --bg-color: #fdf2f8;
+        --bg-image: linear-gradient(to bottom, #fff0f5 0%, #fce7f3 100%);
+        
+        --glass-bg: rgba(255, 255, 255, 0.8);
+        --glass-border: rgba(236, 72, 153, 0.2);
+        --text-color: #831843;
+        --text-muted: #be185d;
+        --paper-white: #fffbfc;
+        --border-radius: 30px;
+        --btn-radius: 25px;
+        --shadow-color: rgba(236, 72, 153, 0.15);
+        --font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
+    }
+    
+    .theme-pink .glass-card { border: 2px solid white; }
+    .theme-pink .btn-tool { background: white; color: var(--text-color); border: 1px solid #fbcfe8; }
+    .theme-pink .btn-tool:hover { background: #fce7f3; box-shadow: 0 4px 12px rgba(236, 72, 153, 0.1); }
+    .theme-pink .printer-slot { background: #fbcfe8; }
+    .theme-pink .template-dock { background: rgba(255, 255, 255, 0.9); border: 2px solid #fbcfe8; }
+
+    .studio-container.theme-military {
+        --primary: #65a30d;
+        --primary-hover: #4d7c0f;
+        --bg-color: #1a1c18;
+        --bg-image: linear-gradient(160deg, #262923 0%, #1a1c18 80%);
+        --glass-bg: rgba(40, 44, 34, 0.95);
+        --glass-border: #4d7c0f;
+        --text-color: #ecfccb;
+        --text-muted: #84cc16;
+        --paper-white: #e5e7eb;
+        --border-radius: 2px;
+        --btn-radius: 0px;
+        --shadow-color: rgba(0, 0, 0, 0.7);
+        --font-family: 'Courier New', monospace;
+    }
+    
+    .theme-military .glass-card { border: 2px solid #3f6212; box-shadow: none; background: rgba(26, 29, 23, 0.95); }
+    .theme-military .btn-tool { background: #363a2e; border: 1px solid #3f6212; color: #d9f99d; letter-spacing: 1px; }
+    .theme-military .btn-tool:hover { background: #3f6212; color: white; }
+    .theme-military .printer-slot { background: #151812; border-top: 4px solid #3f6212; }
+    .theme-military .template-dock { background: #1a1c18; border: 2px solid #3f6212; }
+
+    .studio-container.theme-cyberpunk {
+        --primary: #00f3ff;
+        --primary-hover: #00c2cc;
+        --bg-color: #050505;
+        --bg-image: radial-gradient(circle at bottom right, rgba(0, 243, 255, 0.1), transparent 50%), linear-gradient(to bottom, #09090b, #050505);
+        
+        --glass-bg: rgba(10, 10, 16, 0.9);
+        --glass-border: #00f3ff;
+        --text-color: #e0f2fe;
+        --text-muted: #00f3ff;
+        --paper-white: #ffffff;
+        --border-radius: 4px;
+        --btn-radius: 4px;
+        --shadow-color: rgba(0, 243, 255, 0.4);
+        --font-family: 'Orbitron', sans-serif;
+    }
+    .theme-cyberpunk .glass-card { 
+        border: 1px solid var(--primary); 
+        box-shadow: 0 0 15px var(--shadow-color), inset 0 0 20px rgba(0,243,255,0.05);
+        background: linear-gradient(135deg, rgba(10,10,16,0.95), rgba(0,0,0,0.95));
+    }
+    .theme-cyberpunk .btn-tool {
+        background: rgba(0, 0, 0, 0.5); border: 1px solid var(--primary);
+        color: var(--primary); text-shadow: 0 0 5px var(--primary);
+    }
+    .theme-cyberpunk .btn-tool:hover {
+        background: var(--primary); color: black; box-shadow: 0 0 15px var(--primary);
+    }
+    .theme-cyberpunk .template-dock { border: 1px solid #ff003c; box-shadow: 0 0 10px #ff003c; background: rgba(10, 10, 16, 0.95); }
+    .theme-cyberpunk .dock-header-label { color: #ff003c; text-shadow: 0 0 5px #ff003c; }
+
+
+    body {
+        margin: 0; font-family: var(--font-family, 'Segoe UI', sans-serif); overflow: hidden;
+    }
+
+    .studio-container { 
+        display: flex; height: 100vh; width: 100vw; gap: 20px; padding: 20px; box-sizing: border-box; 
+        background-color: var(--bg-color);
+        background-image: var(--bg-image);
+        color: var(--text-color);
+        transition: background 0.5s ease, color 0.3s ease;
+    }
+    
+    .glass-card {
+        background: var(--glass-bg); backdrop-filter: blur(12px); border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius); box-shadow: 0 8px 32px var(--shadow-color);
+        transition: all 0.3s ease;
+    }
+    .control-panel { width: 340px; display: flex; flex-direction: column; padding: 24px; z-index: 10; overflow-y: auto; }
+    .panel-header h2 { margin: 0; font-size: 1.4rem; color: var(--text-color); }
+    .panel-header p { margin: 5px 0 10px 0; color: var(--text-muted); font-size: 0.85rem; }
+    .divider { height: 1px; background: var(--glass-border); margin: 15px 0; opacity: 0.5; }
+
+    .theme-selector select {
+        background: rgba(0,0,0,0.2);
+        color: var(--text-color);
+        border: 1px solid var(--glass-border);
+        border-radius: 6px;
+        padding: 4px;
+        font-size: 0.8rem;
+        outline: none;
+        cursor: pointer;
+    }
+    .theme-selector select option { background: #1e293b; color: white; }
+    .theme-pink .theme-selector select option { background: white; color: #831843; }
+
+
+    .tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .btn-tool {
+        background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); color: var(--text-color);
+        padding: 12px; border-radius: var(--btn-radius); cursor: pointer; transition: all 0.2s;
+        display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.85rem; position: relative;
+    }
+    .btn-tool:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2); }
+    .hidden-input { position: absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor: pointer; }
+
+    .submenu {
+        position: absolute; top: 100%; left: 0; width: 100%; background: var(--glass-bg); 
+        border: 1px solid var(--glass-border); border-radius: 8px; z-index: 20; overflow: hidden; margin-top: 5px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.2); backdrop-filter: blur(12px);
+    }
+    .submenu-item { padding: 10px; text-align: center; cursor: pointer; font-size: 0.8rem; color: var(--text-color); }
+    .submenu-item:hover { background: var(--primary); color: white; }
+
+    .properties-panel { flex-grow: 1; background: rgba(0,0,0,0.1); border-radius: 12px; padding: 15px; margin-bottom: 20px; border: 1px solid var(--glass-border); }
+    .properties-panel h3 { margin-top: 0; font-size: 0.95rem; color: var(--text-color); border-bottom: 1px solid var(--glass-border); padding-bottom: 8px;}
+    .prop-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .prop-group-row { display: flex; gap: 10px; align-items: center; }
+    .prop-group label { font-size: 0.75rem; color: var(--text-muted); margin-bottom: -4px;}
+    .prop-group input { 
+        background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); 
+        color: var(--text-color); padding: 8px; border-radius: 6px; outline: none; width: 100%; box-sizing: border-box; font-size: 0.9rem;
+    }
+    .prop-group input:focus { border-color: var(--primary); background: rgba(0,0,0,0.3); }
+    .theme-pink .prop-group input { background: white; border-color: #fbcfe8; color: #831843; }
+    .theme-pink .prop-group input:focus { border-color: #ec4899; background: #fff0f5; }
+
+    .helper-text { font-size: 0.75rem; color: var(--text-muted); }
+    .preview-img-box img { width: 100%; max-height: 150px; object-fit: contain; border-radius: 6px; background: rgba(255,255,255,0.1); margin-top: 5px; }
+    
+    .btn-danger { 
+        background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.5); 
+        padding: 8px; border-radius: 6px; cursor: pointer; margin-top: 10px; width: 100%;
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.4); }
+
+    .action-area { margin-top: auto; }
+    .btn-print {
+        background: var(--primary); color: white; border: none; padding: 14px; border-radius: var(--btn-radius); width: 100%;
+        font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        box-shadow: 0 4px 15px var(--shadow-color); display: flex; justify-content: center; align-items: center; gap: 10px;
+    }
+    .btn-print:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); }
+    .btn-print:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+
+    .canvas-area { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden;  position: relative; }
+    .printer-slot { height: 20px; background: #1e293b; border-radius: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.5) inset; z-index: 5; margin-bottom: -10px; }
+    
+    .paper-sheet {
+        background: var(--paper-white); position: relative; box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+        transition: all 0.3s; overflow: hidden; z-index: 1; transform-origin: top center;
+        margin-bottom: 180px; 
+    }
+    
+    .draggable-item {
+        position: absolute; user-select: none; border: 1px solid transparent; padding: 0; box-sizing: content-box;
+    }
+    .draggable-item.selected { border: 1px dashed var(--primary); z-index: 100; box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.1); }
+    .draggable-item:hover:not(.selected) { border: 1px dashed #cbd5e1; }
+
+    .resize-handle {
+        width: 14px; height: 14px; background: var(--primary);
+        border: 2px solid #fff; border-radius: 50%;
+        position: absolute; bottom: -7px; right: -7px;
+        cursor: nwse-resize; z-index: 101;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        transition: transform 0.1s;
+    }
+    .resize-handle:hover { transform: scale(1.2); }
+
+    .rotate-handle {
+        width: 12px; height: 12px; background: #22c55e;
+        border: 2px solid #fff; border-radius: 50%;
+        position: absolute; top: -25px; left: 50%;
+        transform: translateX(-50%);
+        cursor: grab; z-index: 101;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    .rotate-handle:active { cursor: grabbing; }
+    .rotate-handle::after {
+        content: ''; position: absolute;
+        width: 1px; height: 15px; background: #22c55e;
+        left: 50%; top: 10px; transform: translateX(-50%); z-index: -1;
+    }
+
+    .qr-preview-box { background: white; }
+    .qr-preview-box img, .qr-preview-box canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    .anim-print { animation: printPulse 1.5s infinite; }
+    @@keyframes printPulse { 0% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.2); } 50% { box-shadow: 0 0 40px rgba(99, 102, 241, 0.5); } 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.2); } }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s linear infinite; }
+    @@keyframes spin { to { transform: rotate(360deg); } }
+    .animate-in { animation: fadeIn 0.3s ease-out; }
+    @@keyframes fadeIn { from { opacity:0; transform: translateY(5px); } to { opacity:1; transform: translateY(0); } }
+    .empty-state { color: var(--text-muted); text-align: center; margin-top: 30px; font-size: 0.9rem; }
+
+    .template-dock {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 95%; 
+        height: 230px; 
+        background: var(--glass-bg);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius);
+        display: flex;
+        flex-direction: column;
+        padding: 15px;
+        box-shadow: 0 10px 40px var(--shadow-color);
+        z-index: 200;
+        box-sizing: border-box;
+        transition: all 0.3s ease;
+    }
+
+    .dock-header-label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        margin-bottom: 10px;
+        padding-left: 5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .dock-content-row {
+        display: flex;
+        align-items: center;
+        flex-grow: 1;
+        gap: 20px;
+        overflow: hidden; 
+    }
+
+    .dock-action { flex-shrink: 0; }
+    
+    .btn-new-tpl {
+        width: 100px; 
+        height: 120px; 
+        background: rgba(255,255,255,0.03);
+        border: 2px dashed var(--glass-border);
+        border-radius: var(--btn-radius);
+        color: var(--text-muted);
+        display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .btn-new-tpl:hover { background: rgba(99, 102, 241, 0.1); border-color: var(--primary); color: var(--text-color); transform: translateY(-2px); }
+    .plus-icon { font-size: 1.8rem; }
+    .btn-text { font-size: 0.85rem; font-weight: 500; }
+
+    .dock-separator { width: 1px; height: 80%; background: linear-gradient(to bottom, transparent, var(--glass-border), transparent); flex-shrink: 0; }
+    .template-scroll-list {
+        flex-grow: 1;
+        display: flex;
+        gap: 15px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        height: 100%;
+        align-items: center;
+        padding: 0 5px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.3) transparent;
+    }
+    .template-scroll-list::-webkit-scrollbar { height: 6px; }
+    .template-scroll-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+    .template-scroll-list::-webkit-scrollbar-track { background: transparent; }
+
+    .tpl-card {
+        width: 140px; 
+        flex-shrink: 0; 
+        display: flex; flex-direction: column; gap: 8px; 
+        cursor: pointer;
+        transition: transform 0.2s, opacity 0.2s;
+        position: relative;
+    }
+    .tpl-card:hover { transform: translateY(-5px); }
+    .tpl-card:active { transform: translateY(-2px); opacity: 0.8; }
+    
+    .tpl-thumb-container {
+        width: 140px; 
+        height: 100px; 
+        background: #e2e8f0; 
+        border-radius: 10px;
+        overflow: hidden;
+        border: 2px solid transparent;
+        position: relative;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    .tpl-card:hover .tpl-thumb-container { border-color: var(--primary); }
+    
+    .tpl-thumb-container img { width: 100%; height: 100%; object-fit: contain; }
+    .no-img { color: #94a3b8; font-size: 0.8rem; font-weight: 500; }
+    
+    .tpl-name {
+        font-size: 0.85rem; color: var(--text-color); text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        padding: 0 4px;
+    }
+
+    .btn-del-tpl {
+        position: absolute; top: 5px; right: 5px; width: 24px; height: 24px;
+        background: #ef4444; color: white; border: none;
+        border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: bold;
+        display: none; justify-content: center; align-items: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        z-index: 5;
+    }
+    .btn-del-tpl:hover { background: #dc2626; transform: scale(1.1); }
+    .tpl-card:hover .btn-del-tpl { display: flex; }
+
+    .empty-tpl-hint { color: var(--text-muted); font-size: 0.95rem; font-style: italic; margin-left: 20px; user-select: none; }
+
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0,0,0,0.6); z-index: 1000;
+        display: flex; justify-content: center; align-items: center;
+        backdrop-filter: blur(5px);
+    }
+    .modal-box {
+        background: #1e293b; padding: 25px; border-radius: 16px; width: 300px;
+        border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+    .theme-pink .modal-box { background: #fff0f5; border: 2px solid #fbcfe8; }
+    .theme-pink .modal-box h3 { color: #831843; }
+    .theme-pink .modal-box input { background: white; border-color: #fbcfe8; color: #831843; }
+    .theme-pink .btn-cancel { color: #831843; border-color: #fbcfe8; }
+
+    .modal-box h3 { margin-top: 0; color: white; font-size: 1.1rem; }
+    .modal-box input {
+        width: 100%; padding: 10px; margin: 15px 0; background: rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white;
+        box-sizing: border-box; outline: none;
+    }
+    .modal-box input:focus { border-color: var(--primary); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    .btn-cancel { background: transparent; border: 1px solid #64748b; color: #cbd5e1; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+    .btn-confirm { background: var(--primary); border: none; color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+
+.btn-api-docs {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--text-color);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+.btn-api-docs:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+
+.doc-modal {
+    width: 600px; 
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0; 
+    overflow: hidden;
+}
+
+.modal-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0,0,0,0.1);
+}
+.modal-header h3 { margin: 0; font-size: 1.1rem; }
+.btn-close {
+    background: none; border: none; color: var(--text-muted);
+    font-size: 1.5rem; cursor: pointer;
+}
+
+.doc-content {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.api-section { margin-bottom: 20px; }
+.api-section h4 { margin: 0 0 5px 0; color: var(--primary); }
+.api-section p { margin: 0 0 10px 0; font-size: 0.85rem; color: var(--text-muted); }
+
+.badge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-family: monospace; }
+.badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
+.badge.post { background: #49cc90; color: white; }
+.url { color: var(--text-color); background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; }
+
+
+.param-table {
+    background: rgba(0,0,0,0.1);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 0.85rem;
+}
+.param-row { display: grid; grid-template-columns: 1fr 1fr 2fr; padding: 8px; border-bottom: 1px solid var(--glass-border); }
+.param-row:last-child { border-bottom: none; }
+.param-row.header { font-weight: bold; background: rgba(255,255,255,0.05); color: var(--text-muted); }
+
+.code-block {
+    position: relative;
+    background: #1e1e1e;
+    border-radius: 6px;
+    padding: 15px;
+    margin-top: 5px;
+    border: 1px solid #333;
+}
+.code-block pre {
+    margin: 0;
+    color: #d4d4d4;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.btn-copy {
+    position: absolute;
+    top: 5px; right: 5px;
+    background: rgba(255,255,255,0.1);
+    border: none; color: #fff;
+    font-size: 0.7rem; padding: 4px 8px;
+    border-radius: 4px; cursor: pointer;
+}
+.btn-copy:hover { background: var(--primary); }
+
+.theme-pink .code-block { background: #fff0f5; border-color: #fbcfe8; }
+.theme-pink .code-block pre { color: #831843; }
+.theme-pink .url { background: #fff; color: #db2777; border: 1px solid #fbcfe8; }
+.btn-about {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+.btn-about:hover {
+    box-shadow: 0 0 15px var(--shadow-color);
+}
+
+.about-modal {
+    width: 650px;
+    max-width: 90vw;
+    padding: 0; 
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--glass-border);
+}
+
+.btn-close-abs {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.8rem;
+    cursor: pointer;
+    z-index: 10;
+    line-height: 1;
+}
+.btn-close-abs:hover { color: var(--primary); transform: scale(1.1); }
+
+.about-header {
+    text-align: center;
+    padding: 30px 20px 20px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.1), transparent);
+}
+
+.avatar-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    margin: 0 auto 15px;
+    border: 3px solid var(--primary);
+    padding: 3px;
+    background: var(--glass-bg);
+    overflow: hidden;
+}
+.avatar-circle img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+
+.about-header h3 { margin: 0; font-size: 1.5rem; color: var(--text-color); }
+.tagline { margin: 5px 0 15px; color: var(--text-muted); font-size: 0.9rem; }
+
+.social-tags { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.tag {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid var(--glass-border);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.divider-light {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--glass-border), transparent);
+    width: 80%;
+    margin: 0 auto;
+}
+
+.qr-grid {
+    display: flex;
+    gap: 20px;
+    padding: 30px;
+    justify-content: center;
+}
+@@media(max-width: 600px) { .qr-grid { flex-direction: column; } }
+
+.qr-card {
+    flex: 1;
+    background: rgba(0,0,0,0.1);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: transform 0.3s, border-color 0.3s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.qr-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary);
+    background: rgba(0,0,0,0.2);
+}
+
+.card-icon { font-size: 2rem; margin-bottom: 10px; }
+.qr-card h4 { margin: 0 0 5px 0; color: var(--text-color); font-size: 1.1rem; }
+.qr-card p { margin: 0 0 15px 0; color: var(--text-muted); font-size: 0.8rem; line-height: 1.4; height: 35px; /* 对齐高度 */ }
+
+.qr-img-box {
+    width: 140px;
+    height: 140px;
+    background: white;
+    padding: 5px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+.qr-img-box img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.tip-text { font-size: 0.75rem; color: var(--text-muted); opacity: 0.8; }
+
+.sponsor-card:hover .card-icon { animation: heartBeat 1s infinite; }
+@@keyframes heartBeat { 0%{transform:scale(1);} 50%{transform:scale(1.2);} 100%{transform:scale(1);} }
+
+.about-footer {
+    text-align: center;
+    padding: 20px;
+    background: rgba(0,0,0,0.1);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--glass-border);
+}
+.about-footer p { margin: 3px 0; }
+.about-footer strong { color: var(--primary); }
+.copyright { opacity: 0.6; font-size: 0.7rem; }
+
+.theme-pink .about-modal { background: #fff0f5; }
+.theme-pink .avatar-circle { background: white; }
+.theme-pink .qr-card { background: white; box-shadow: 0 5px 15px rgba(236, 72, 153, 0.05); }
+.theme-pink .tag { background: rgba(236, 72, 153, 0.1); color: #db2777; }
+
+</style>
+
+@code {
+    private List<DesignElement> Elements = new();
+    private DesignElement? SelectedElement;
+    private bool IsPrinting = false;
+    private DotNetObjectReference<Home>? _objRef;
+
+    private int CanvasWidth { get; set; } = 384; 
+    private int CanvasHeight { get; set; } = 400;
+
+    private List<SavedTemplate> TemplateList = new();
+    private string NewTemplateName = "我的设计";
+    private bool ShowSaveDialog = false;
+
+
+    private bool ShowDynamicMenu = false;
+    private bool ShowApiDocs = false;
+    private string? CurrentTemplateId;
+    private bool ShowAboutModal = false;
+
+    private string CurrentTheme { get; set; } = "theme-default";
+
+    protected override void OnInitialized()
+    {
+        _objRef = DotNetObjectReference.Create(this);
+        AddText();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadTemplateList();
+
+            var savedTheme = await JS.InvokeAsync<string>("dragManager.getTheme");
+            if (!string.IsNullOrEmpty(savedTheme))
+            {
+                CurrentTheme = savedTheme;
+                StateHasChanged();
+            }
+        }
+
+        await RenderAllQrCodes();
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task OnThemeChanged(ChangeEventArgs e)
+    {
+        CurrentTheme = e.Value?.ToString() ?? "theme-default";
+        await JS.InvokeVoidAsync("dragManager.saveTheme", CurrentTheme);
+    }
+
+    private async Task RenderAllQrCodes()
+    {
+        foreach (var element in Elements.Where(e => e.Type == ElementType.QRCode))
+        {
+            await RenderQrCode(element);
+        }
+    }
+
+    private async Task RenderQrCode(DesignElement? element)
+    {
+        if (element != null && element.Type == ElementType.QRCode)
+        {
+            await JS.InvokeVoidAsync("dragManager.generateQRCode", element.Id.ToString(), element.Content, element.Width, element.Height);
+        }
+    }
+
+    private void InitiateSave()
+    {
+        NewTemplateName = $"设计-{DateTime.Now:MMdd-HHmm}";
+        ShowSaveDialog = true;
+    }
+
+    private async Task AutoSaveCurrentDesign()
+    {
+        if (string.IsNullOrEmpty(CurrentTemplateId)) return;
+
+        try
+        {
+            var currentData = new SavedTemplate
+            {
+                Id = CurrentTemplateId,
+                Name = TemplateList.FirstOrDefault(t => t.Id == CurrentTemplateId)?.Name ?? "未命名", 
+                ThumbnailBase64 = TemplateList.FirstOrDefault(t => t.Id == CurrentTemplateId)?.ThumbnailBase64 ?? "",
+                CreatedAt = DateTime.Now,
+                Data = new TemplateData
+                {
+                    CanvasWidth = CanvasWidth,
+                    CanvasHeight = CanvasHeight,
+                    Elements = Elements.Select(e => new DesignElement
+                    {
+                        Id = e.Id,
+                        Type = e.Type,
+                        Content = e.Content,
+                        X = e.X,
+                        Y = e.Y,
+                        Width = e.Width,
+                        Height = e.Height,
+                        FontSize = e.FontSize,
+                        Rotation = e.Rotation
+                    }).ToList()
+                }
+            };
+
+            await TemplateService.UpdateAsync(currentData);
+            var index = TemplateList.FindIndex(t => t.Id == CurrentTemplateId);
+            if (index != -1)
+            {
+                TemplateList[index] = currentData;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"自动保存失败: {ex.Message}");
+        }
+    }
+
+
+
+    private async Task LoadTemplateList()
+    {
+        try
+        {
+            TemplateList = await TemplateService.GetListAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"无法从服务器加载模板: {ex.Message}");
+        }
+    }
+    private async Task ConfirmSave()
+    {
+        ShowSaveDialog = false;
+        try 
+        {
+            var thumbnail = await JS.InvokeAsync<string>("dragManager.getCanvasSnapshot", "print-canvas");
+
+            var newTemplate = new SavedTemplate
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = NewTemplateName,
+                ThumbnailBase64 = thumbnail,
+                CreatedAt = DateTime.Now,
+                Data = new TemplateData 
+                { 
+                    CanvasWidth = CanvasWidth, 
+                    CanvasHeight = CanvasHeight, 
+                    Elements = Elements.Select(e => new DesignElement 
+                    {
+                        Id = Guid.NewGuid(),
+                        Type = e.Type, Content = e.Content, X = e.X, Y = e.Y, 
+                        Width = e.Width, Height = e.Height, FontSize = e.FontSize, Rotation = e.Rotation
+                    }).ToList()
+                }
+            };
+            CurrentTemplateId = newTemplate.Id;
+            await TemplateService.SaveAsync(newTemplate);
+            TemplateList = await TemplateService.GetListAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Save Error: " + ex.Message);
+        }
+    }
+
+    private async Task DeleteTemplate(SavedTemplate t)
+    {
+        try 
+        {
+            TemplateService.Delete(t.Id);
+            TemplateList = await TemplateService.GetListAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"删除出错: {ex.Message}");
+        }
+    }
+
+
+    private void ShowApiDocModal()
+    {
+        if (string.IsNullOrEmpty(CurrentTemplateId))
+        {
+            JS.InvokeVoidAsync("alert", "请先保存当前设计为模板，生成 TemplateID 后才能查看调用文档。");
+            return;
+        }
+        ShowApiDocs = true;
+    }
+
+    private string GenerateDynamicJsonExample()
+    {
+        // 1. 准备数据
+        var dynamicData = new Dictionary<string, string>();
+
+        foreach (var el in Elements)
+        {
+            if (el.Type == ElementType.DynamicString || el.Type == ElementType.DynamicQRCode)
+            {
+                var originalKey = el.Content;
+        
+                if (!string.IsNullOrEmpty(originalKey))
+                {
+                    // 使用处理过的新 Key 存入字典
+                    if (!dynamicData.ContainsKey(originalKey))
+                    {
+                        dynamicData.Add(originalKey, "示例值_" + originalKey.Trim('{','}'));
+                    }
+                }
+            }
+        }
+        return JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            { "templateId", CurrentTemplateId! },
+            { "data", dynamicData }
+        }, new JsonSerializerOptions 
+        { 
+            WriteIndented = true, 
+            Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) 
+        });
+    }
+
+    private string GenerateCurlExample()
+    {
+        var json = GenerateDynamicJsonExample();
+        var escapedJson = json.Replace("\"", "\\\""); 
+        
+        return $"curl -X POST \"http://localhost:5000/api/print/dynamic\" \\\n" +
+               $"-H \"Content-Type: application/json\" \\\n" +
+               $"-d '{json}'";
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        await JS.InvokeVoidAsync("alert", "代码已复制到剪贴板！");
+    }
+
+
+    private void ApplyTemplate(SavedTemplate t)
+    {
+        if(t.Data == null) return;
+        CurrentTemplateId = t.Id;
+        CanvasWidth = t.Data.CanvasWidth;
+        CanvasHeight = t.Data.CanvasHeight;
+        Elements = t.Data.Elements.Select(e => new DesignElement 
+        {
+            Id = Guid.NewGuid(),
+            Type = e.Type, Content = e.Content, X = e.X, Y = e.Y, 
+            Width = e.Width, Height = e.Height, FontSize = e.FontSize, Rotation = e.Rotation
+        }).ToList();
+
+        SelectedElement = null;
+        StateHasChanged();
+    }
+
+
+    public class SavedTemplate
+    {
+        public string Id { get; set; }
+        public string Name { get; set; } = "";
+        public string ThumbnailBase64 { get; set; } = "";
+        public DateTime CreatedAt { get; set; }
+        public TemplateData? Data { get; set; }
+    }
+
+    public class TemplateData
+    {
+        public int CanvasWidth { get; set; }
+        public int CanvasHeight { get; set; }
+        public List<DesignElement> Elements { get; set; } = new();
+    }
+
+    private void AddText()
+    {
+        var el = new DesignElement 
+        { 
+            Id = Guid.NewGuid(), 
+            Type = ElementType.Text, 
+            Content = "双击编辑文字", 
+            X = 50, Y = 50, 
+            FontSize = 24 
+        };
+        Elements.Add(el);
+        SelectedElement = el;
+    }
+
+    private async Task AddQrCode()
+    {
+        var el = new DesignElement
+        {
+            Id = Guid.NewGuid(),
+            Type = ElementType.QRCode,
+            Content = "https://example.com",
+            X = (CanvasWidth - 100) / 2, 
+            Y = 120,
+            Width = 100,
+            Height = 100
+        };
+        Elements.Add(el);
+        SelectedElement = el;
+        await Task.Delay(50);
+        await RenderQrCode(el);
+    }
+
+    // 添加动态元素的方法
+    private void AddDynamicElement(ElementType type)
+    {
+        ShowDynamicMenu = false;
+        var el = new DesignElement
+        {
+            Id = Guid.NewGuid(),
+            Type = type,
+            Content = "{dynamic_val}",
+            X = 50, Y = 50,
+            Width = 100,
+            Height = 100,
+            FontSize = 24
+        };
+        Elements.Add(el);
+        SelectedElement = el;
+    }
+
+    private bool IsDynamic(DesignElement item)
+    {
+        return item.Type == ElementType.DynamicString || item.Type == ElementType.DynamicQRCode;
+    }
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        long maxFileSize = 1024 * 1024 * 15; 
+        try 
+        {
+            var today = DateTime.Now.ToString("yyyy-MM-dd");
+            var uploadFolder = Path.Combine(Environment.WebRootPath, "uploads", today);
+
+            if (!Directory.Exists(uploadFolder))
+            {
+                Directory.CreateDirectory(uploadFolder);
+            }
+
+            var extension = Path.GetExtension(file.Name);
+            var safeFileName = $"{Guid.NewGuid()}{extension}";
+            var absolutePath = Path.Combine(uploadFolder, safeFileName);
+
+            await using FileStream fs = new(absolutePath, FileMode.Create);
+            await file.OpenReadStream(maxFileSize).CopyToAsync(fs);
+
+            var relativeUrl = $"/uploads/{today}/{safeFileName}";
+
+            var el = new DesignElement
+            {
+                Id = Guid.NewGuid(),
+                Type = ElementType.Image,
+                Content = relativeUrl, 
+                X = 20, Y = 20,
+                Width = 200, 
+                Height = 200 
+            };
+            Elements.Add(el);
+            SelectedElement = el;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Upload Error: {ex.Message}");
+        }
+    }
+
+    private void RemoveElement(DesignElement? element)
+    {
+        if(element != null)
+        {
+            Elements.Remove(element);
+            SelectedElement = null;
+        }
+    }
+
+    private void ClearCanvas()
+    {
+        Elements.Clear();
+        SelectedElement = null;
+    }
+
+    private void DeselectAll()
+    {
+        SelectedElement = null;
+    }
+
+    private async Task OnMouseDownElement(MouseEventArgs e, DesignElement item)
+    {
+        SelectedElement = item;
+        await JS.InvokeVoidAsync("dragManager.startDrag", _objRef, item.Id.ToString(), e.ClientX, e.ClientY);
+    }
+
+    private async Task OnMouseDownResize(MouseEventArgs e, DesignElement item)
+    {
+        SelectedElement = item;
+        int mode = (item.Type == ElementType.Text || item.Type == ElementType.DynamicString) ? 2 : 1; 
+        await JS.InvokeVoidAsync("dragManager.startResize", _objRef, item.Id.ToString(), e.ClientX, e.ClientY, mode);
+    }
+
+    private async Task OnMouseDownRotate(MouseEventArgs e, DesignElement item)
+    {
+        SelectedElement = item;
+        await JS.InvokeVoidAsync("dragManager.startRotate", _objRef, item.Id.ToString(), e.ClientX, e.ClientY);
+    }
+
+    [JSInvokable]
+    public void UpdateElementPosition(string id, double x, double y)
+    {
+        var item = Elements.FirstOrDefault(e => e.Id.ToString() == id);
+        if (item != null)
+        {
+            item.X = x;
+            item.Y = y;
+            StateHasChanged();
+            _= AutoSaveCurrentDesign();
+            
+        }
+    }
+
+    [JSInvokable]
+    public async Task UpdateElementShape(string id, double width, double height, int fontSize)
+    {
+        var item = Elements.FirstOrDefault(e => e.Id.ToString() == id);
+        if (item != null)
+        {
+            item.Width = width;
+            item.Height = height;
+            item.FontSize = fontSize;
+            StateHasChanged();
+
+            if (item.Type == ElementType.QRCode)
+            {
+                await RenderQrCode(item);
+            }
+            _= AutoSaveCurrentDesign();
+        }
+    }
+
+    [JSInvokable]
+    public void UpdateElementRotation(string id, double rotation)
+    {
+        var item = Elements.FirstOrDefault(e => e.Id.ToString() == id);
+        if (item != null)
+        {
+            item.Rotation = rotation;
+            StateHasChanged();
+            _= AutoSaveCurrentDesign();
+        }
+    }
+
+    private async Task PrintDesign()
+    {
+        if (IsPrinting) return;
+        IsPrinting = true;
+        
+        var tempSelected = SelectedElement;
+        SelectedElement = null;
+        StateHasChanged();
+        await Task.Delay(50);
+
+        try
+        {
+            await JS.InvokeVoidAsync("dragManager.printToApi", "print-canvas", CanvasWidth, CanvasHeight);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+        finally
+        {
+            SelectedElement = tempSelected;
+            IsPrinting = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _objRef?.Dispose();
+    }
+
+    public class DesignElement
+    {
+        public Guid Id { get; set; }
+        public ElementType Type { get; set; }
+        public string Content { get; set; } = "";
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Width { get; set; } = 100;
+        public double Height { get; set; } = 100;
+        public int FontSize { get; set; } = 24;
+        public double Rotation { get; set; } = 0;
+    }
+
+    public enum ElementType { Text, Image, QRCode, DynamicString, DynamicQRCode }
+}
+
+<script>
+    window.dragManager = {
+        activeItem: null,
+        interactionMode: 'none',
+        startX: 0,
+        startY: 0,
+        initialLeft: 0,
+        initialTop: 0,
+        initialWidth: 0,
+        initialHeight: 0,
+        initialFontSize: 0,
+        initialRotation: 0,
+        startAngle: 0,
+        centerX: 0,
+        centerY: 0,
+        currentId: null,
+        dotNetHelper: null,
+        resizeMode: 1,
+
+        saveTheme: function(themeName) {
+            localStorage.setItem('miniprint_theme', themeName);
+        },
+
+        getTheme: function() {
+            return localStorage.getItem('miniprint_theme');
+        },
+
+        startDrag: function (dotNetHelper, id, clientX, clientY) {
+            this.initInteraction(dotNetHelper, id, clientX, clientY, 'drag');
+            this.initialLeft = parseFloat(this.activeItem.style.left || 0);
+            this.initialTop = parseFloat(this.activeItem.style.top || 0);
+            this.addEvents();
+        },
+
+        startResize: function (dotNetHelper, id, clientX, clientY, mode) {
+            this.initInteraction(dotNetHelper, id, clientX, clientY, 'resize');
+            this.resizeMode = mode;
+
+            if (mode === 2) { 
+                const span = this.activeItem.querySelector('span');
+                this.initialFontSize = parseFloat(window.getComputedStyle(span).fontSize);
+            } else { 
+                let content = this.activeItem.querySelector('img') || this.activeItem.querySelector('.qr-preview-box');
+                if(!content) content = this.activeItem;
+
+                this.initialWidth = content.offsetWidth;
+                this.initialHeight = content.offsetHeight;
+            }
+            this.addEvents();
+        },
+
+        startRotate: function(dotNetHelper, id, clientX, clientY) {
+            this.initInteraction(dotNetHelper, id, clientX, clientY, 'rotate');
+            
+            const rect = this.activeItem.getBoundingClientRect();
+            this.centerX = rect.left + rect.width / 2;
+            this.centerY = rect.top + rect.height / 2;
+
+            const dx = clientX - this.centerX;
+            const dy = clientY - this.centerY;
+            this.startAngle = Math.atan2(dy, dx);
+            
+            const style = this.activeItem.style.transform;
+            const match = style.match(/rotate\(([-]?\d+\.?\d*)deg\)/);
+            this.initialRotation = match ? parseFloat(match[1]) : 0;
+            
+            this.addEvents();
+        },
+
+        initInteraction: function(dotNetHelper, id, x, y, mode) {
+            this.dotNetHelper = dotNetHelper;
+            this.currentId = id;
+            this.startX = x;
+            this.startY = y;
+            this.activeItem = document.getElementById('el-' + id);
+            this.interactionMode = mode;
+        },
+
+        addEvents: function() {
+            document.addEventListener('mousemove', this.handlers.move);
+            document.addEventListener('mouseup', this.handlers.up);
+        },
+
+        removeEvents: function() {
+            document.removeEventListener('mousemove', this.handlers.move);
+            document.removeEventListener('mouseup', this.handlers.up);
+        },
+
+        handlers: {
+            move: (e) => window.dragManager.onMouseMove(e),
+            up: (e) => window.dragManager.onMouseUp(e)
+        },
+
+        onMouseMove: function (e) {
+            if (!this.activeItem) return;
+            e.preventDefault(); 
+
+            let dx = e.clientX - this.startX;
+            let dy = e.clientY - this.startY;
+
+            if (this.interactionMode === 'drag') {
+                this.activeItem.style.left = (this.initialLeft + dx) + 'px';
+                this.activeItem.style.top = (this.initialTop + dy) + 'px';
+            } 
+            else if (this.interactionMode === 'resize') {
+                if (this.resizeMode === 2) { 
+                    let scale = (dx + dy) / 2; 
+                    let newSize = Math.max(12, this.initialFontSize + (scale / 2)); 
+                    const span = this.activeItem.querySelector('span');
+                    if(span) span.style.fontSize = newSize + 'px';
+                } else {
+                    let newW = Math.max(20, this.initialWidth + dx);
+                    let newH = Math.max(20, this.initialHeight + dy);
+                    const content = this.activeItem.querySelector('img') || this.activeItem.querySelector('.qr-preview-box');
+                    if (content) {
+                        content.style.width = newW + 'px';
+                        content.style.height = newH + 'px';
+                    }
+                }
+            }
+            else if (this.interactionMode === 'rotate') {
+                const currentDx = e.clientX - this.centerX;
+                const currentDy = e.clientY - this.centerY;
+                const currentAngle = Math.atan2(currentDy, currentDx);
+
+                const angleDiff = (currentAngle - this.startAngle) * (180 / Math.PI);
+                const newRotation = this.initialRotation + angleDiff;
+
+                this.activeItem.style.transform = `rotate(${newRotation}deg)`;
+            }
+        },
+
+        onMouseUp: function (e) {
+            this.removeEvents();
+            
+            if (this.activeItem && this.dotNetHelper) {
+                if (this.interactionMode === 'drag') {
+                    let finalX = parseFloat(this.activeItem.style.left);
+                    let finalY = parseFloat(this.activeItem.style.top);
+                    this.dotNetHelper.invokeMethodAsync('UpdateElementPosition', this.currentId, finalX, finalY);
+                } 
+                else if (this.interactionMode === 'resize') {
+                    let finalW = 0, finalH = 0, finalFS = 0;
+                    
+                    if (this.resizeMode === 2) {
+                        const span = this.activeItem.querySelector('span');
+                        finalFS = parseFloat(window.getComputedStyle(span).fontSize);
+                    } else {
+                        const content = this.activeItem.querySelector('img') || this.activeItem.querySelector('.qr-preview-box');
+                        if(content) {
+                            finalW = parseFloat(content.style.width);
+                            finalH = parseFloat(content.style.height);
+                        } else {
+                            finalW = parseFloat(this.activeItem.style.width || 100);
+                            finalH = parseFloat(this.activeItem.style.height || 100);
+                        }
+                    }
+                    
+                    this.dotNetHelper.invokeMethodAsync('UpdateElementShape', this.currentId, finalW, finalH, parseInt(finalFS));
+                }
+                else if (this.interactionMode === 'rotate') {
+                    const style = this.activeItem.style.transform;
+                    const match = style.match(/rotate\(([-]?\d+\.?\d*)deg\)/);
+                    const finalRotation = match ? parseFloat(match[1]) : 0;
+                    
+                    this.dotNetHelper.invokeMethodAsync('UpdateElementRotation', this.currentId, finalRotation);
+                }
+            }
+            
+            this.activeItem = null;
+            this.currentId = null;
+            this.interactionMode = 'none';
+        },
+
+        generateQRCode: function(id, text, width, height) {
+            var container = document.getElementById('qr-target-' + id);
+            if(!container) return;
+            
+            container.innerHTML = '';
+            
+            if(!text || text.trim() === '') text = ' ';
+
+            try {
+                new QRCode(container, {
+                    text: text,
+                    width: width,
+                    height: height,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+                
+                var img = container.querySelector('img');
+                if(img) {
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                }
+            } catch(e) {
+                console.error("QR Gen Error", e);
+            }
+        },
+
+        printToApi: function(elementId, width, height) {
+             var element = document.getElementById(elementId);
+             if (!element) return Promise.reject("找不到元素");
+
+             var imgs = element.getElementsByTagName("img");
+             for (var i = 0; i < imgs.length; i++) {
+                 var currentSrc = imgs[i].getAttribute("src");
+                 if (currentSrc && currentSrc.startsWith("/")) {
+                     imgs[i].src = window.location.origin + currentSrc;
+                 }
+             }
+
+             return html2canvas(element, { 
+                 backgroundColor: '#ffffff',
+                 scale: 2, 
+                 logging: false,
+                 useCORS: true,
+                 onclone: function(clonedDoc) {
+                    var clonedElement = clonedDoc.getElementById(elementId);
+                    if(clonedElement) {
+                        clonedElement.classList.remove('anim-print');
+                        clonedElement.style.boxShadow = 'none';
+                        var dynamicItems = clonedElement.querySelectorAll('.dynamic-item span, .dynamic-item .qr-preview-box');
+                        dynamicItems.forEach(d => {
+                             d.style.border = 'none'; 
+                             d.style.color = 'black'; 
+                        });
+                    }
+                 }
+             }).then(canvas => {
+                 var base64Data = canvas.toDataURL('image/png');
+
+                 return fetch('/api/print', {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/json'
+                     },
+                     body: JSON.stringify({
+                         imageBase64: base64Data,
+                         width: parseInt(width),    
+                         height: parseInt(height)   
+                     })
+                 }).then(response => {
+                     if (response.ok) {
+                         return "打印指令已发送成功！";
+                     } else {
+                         return response.text().then(text => { throw new Error(text) });
+                     }
+                 });
+             });
+        },
+
+        getCanvasSnapshot: function(elementId) {
+             var element = document.getElementById(elementId);
+             if (!element) return null;
+             
+             var selectedItems = element.querySelectorAll('.selected');
+             selectedItems.forEach(el => el.classList.remove('selected'));
+             var handles = element.querySelectorAll('.resize-handle, .rotate-handle');
+             handles.forEach(h => h.style.display = 'none');
+
+             return html2canvas(element, { 
+                 backgroundColor: '#ffffff',
+                 scale: 0.4, 
+                 logging: false,
+                 useCORS: true
+             }).then(canvas => {
+                 handles.forEach(h => h.style.display = '');
+                 return canvas.toDataURL('image/jpeg', 0.7); 
+             });
+        },
+
+        saveTemplatesToStorage: function(jsonStr) {
+            try {
+                localStorage.setItem('miniprint_template_list', jsonStr);
+            } catch (e) {
+                console.error("Storage full?", e);
+                alert("保存失败：可能是存储空间已满");
+            }
+        },
+
+        getTemplatesFromStorage: function() {
+            return localStorage.getItem('miniprint_template_list');
+        }
+    };
+</script>

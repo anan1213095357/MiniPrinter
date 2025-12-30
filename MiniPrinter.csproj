@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+    <PackageReference Include="QRCoder" Version="1.7.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.1" />
+  </ItemGroup>
+
+</Project>
